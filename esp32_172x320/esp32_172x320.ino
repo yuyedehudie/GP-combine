@@ -1445,17 +1445,37 @@ void drawStatusBar() {
   char buf[40];
   snprintf(buf, sizeof(buf), "SOCD:%s DP:%s MODE:%s",
            socdName(stSocd), dpadName(stDpadMode), modeName(stInputMode));
-  drawText(4, 3, buf, LAYOUT_TEXT);
-  // power indicator: USB icon or battery icon + percent
-  if (stBattFlags & 0x02) {
-    drawUsbIcon(286, 7, ACC_SETTINGS);
-  } else {
-    int pct = battPercent(stBattMv);
-    if (pct >= 0) {
-      drawMiniBattery(282, 2, 18, 10, pct, LAYOUT_TEXT);
+  const int cy = 7;
+  int tw = (int)strlen(buf) * 4 * FONT_SCALE - FONT_SCALE;
+
+  bool usb = (stBattFlags & 0x02) != 0;
+  int pct = usb ? -1 : battPercent(stBattMv);
+  bool hasPwr = usb || pct >= 0;
+  bool hasWifi = radioUp;
+
+  // 文字 + 电源图标 + 无线图标作为一整块，在顶部水平居中
+  const int GAP = 6, STATUS_ICON_W = 20;
+  int pw = hasPwr ? STATUS_ICON_W : 0;
+  int ww = hasWifi ? STATUS_ICON_W : 0;
+  int total = tw + (pw ? GAP + pw : 0) + (ww ? GAP + ww : 0);
+  int x = SCR_CX - total / 2;
+
+  drawText(x, cy - FONT_SCALE * 5 / 2 + 1, buf, LAYOUT_TEXT);
+  x += tw;
+
+  if (hasPwr) {
+    x += GAP;
+    if (usb) {
+      drawUsbIcon(x + 2, cy, ACC_SETTINGS);   // 内部以 x-2 为左缘
+    } else {
+      drawMiniBattery(x, cy - 5, 18, 10, pct, LAYOUT_TEXT);
     }
+    x += STATUS_ICON_W;
   }
-  if (radioUp) drawMiniWireless(310, 11, radioLinked);
+  if (hasWifi) {
+    x += GAP;
+    drawMiniWireless(x + STATUS_ICON_W / 2, 11, radioLinked);  // 圆心；y=11 避免扇形弧顶出屏
+  }
 }
 
 // layout tables: movement side per layout + shared right cluster
