@@ -11,6 +11,7 @@ from __future__ import annotations
 import ctypes
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -35,16 +36,27 @@ def lib_tag(res: str) -> str:
     return "320" if "320" in res else "240"
 
 
+def lib_suffix() -> str:
+    """共享库后缀：Windows 用 .dll，Linux 用 .so。"""
+    return ".dll" if os.name == "nt" else ".so"
+
+
 def find_lib(res: str) -> Path | None:
     """找仿真库。优先级：环境变量 > 打包内 bin/ > 仓库 tools/ 下。"""
     key = lib_tag(res)
+    suffix = lib_suffix()
     pkg = Path(__file__).resolve().parent          # .../gpfusion_wizard
+    roots = [pkg]
+    # PyInstaller 打包后纯模块在 PYZ 内，__file__ 是虚拟路径；用 _MEIPASS 兜底定位资源根
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass) / "gpfusion_wizard")
     cands: list[Path] = []
     env = os.environ.get(f"GPFUSION_SIMLIB_{key}")
     if env:
         cands.append(Path(env))
-    suffix = ".dll" if os.name == "nt" else ".so"
-    cands.append(pkg / "bin" / f"libsim{key}{suffix}")
+    for root in roots:
+        cands.append(root / "bin" / f"libsim{key}{suffix}")
     repo = pkg.parent.parent
     cands.extend(sorted(repo.glob(f"tools/*/build/libsim{key}{suffix}")))
     for c in cands:
@@ -60,8 +72,8 @@ class SimEngine:
         path = find_lib(res)
         if path is None:
             raise FileNotFoundError(
-                "找不到仿真库 libsim%s（先跑 tools 下 HEADLESS=1 ./build.sh 或 pc_app/prepare_sim.sh）"
-                % lib_tag(res)
+                "找不到仿真库 libsim%s%s（先编共享库：Linux 跑 prepare_sim.sh，Windows 跑 build.bat 并设 SIM_SHARED=1）"
+                % (lib_tag(res), lib_suffix())
             )
         self._lib = ctypes.CDLL(str(path))
         lib = self._lib

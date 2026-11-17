@@ -228,6 +228,8 @@ class LayoutPage(QWidget):
     # ---------- 状态 ----------
 
     def _sync_from_state(self) -> None:
+        # 先按当前分辨率刷新画布尺寸，再用新的宽高夹取越界按键
+        self._apply_dims()
         # 载入时统一夹取：越界按键直接拉回屏内（旧状态文件/换屏都会踩到）
         w, h, sh = self._dims()
         fixed = sanitize_layout(self._layout(), w, h, status_h=sh)
@@ -272,6 +274,19 @@ class LayoutPage(QWidget):
             return LITE_SCREEN[0], LITE_SCREEN[1], LITE_STATUS_H
         w, h = screen_dims(self.state.screen_res)
         return w, h, 0
+
+    def _apply_dims(self) -> None:
+        """按当前分辨率刷新画布逻辑尺寸与右侧控件取值范围。
+
+        布局页在主窗口启动时就被构造，那时分辨率还是默认 240x135；
+        之后在准备页切到 170/172，必须在这里把画布坐标系一并改掉，
+        否则大坐标会被夹在小画布里、拖不到目标位置。
+        """
+        w, h, sh = self._dims()
+        self.canvas.set_logical_size((w, h), sh)
+        self.x_spin.setRange(1, w - 1)
+        self.y_spin.setRange((LITE_STATUS_H + 1) if self.lite else 1, h - 1)
+        self.global_size.setRange(3, max(3, self._global_r_max()))
 
     def _all_btns(self) -> list[Btn]:
         lay = self._layout()

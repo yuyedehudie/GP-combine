@@ -60,6 +60,19 @@ run.bat 320 --scale=3 --fps=60
 
 `build.bat` 首次会自动调 arduino-cli 生成 `.ino.cpp`（几分钟，只做一次）；之后只编本机 exe。
 
+### 编共享库（配置助手内嵌预览用）
+
+默认编的是独立 exe。配置助手的「仿真器预览」需要被 ctypes 加载的共享库，设环境变量 `SIM_SHARED=1` 再编：
+
+```bat
+set SIM_SHARED=1
+build.bat 240        :: 出 libsim240.dll
+build.bat 320        :: 出 libsim320.dll
+build.bat 172        :: 出 libsim172.dll
+```
+
+产物在 `build\libsim<TAG>.dll`，并自动拷到 `..\pc_app\gpfusion_wizard\bin\`。共享库不建窗口、不走 GDI+ 上屏，只把固件帧缓冲（RGB565 的 `lfb`）暴露给助手；导出接口与 Linux 版 `libsim*.so` 一致。
+
 窗口里的按键（电脑键盘模拟手柄）：
 
 | 键 | 对应 |

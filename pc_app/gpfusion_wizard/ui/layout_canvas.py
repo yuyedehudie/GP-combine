@@ -43,6 +43,13 @@ class LayoutCanvas(QWidget):
         self.layout_data = layout
         self.update()
 
+    def set_logical_size(self, logical_size: tuple[int, int], status_h: int = 0) -> None:
+        """切换逻辑画布尺寸（换分辨率后调用）：更新坐标系、最小尺寸并重绘。"""
+        self._lw, self._lh = int(logical_size[0]), int(logical_size[1])
+        self._status_h = max(0, int(status_h))
+        self.setMinimumSize(self._lw * 2, self._lh * 2)
+        self.update()
+
     def set_selection(self, group: str, index: int) -> None:
         self.sel_group = group
         self.sel_index = index

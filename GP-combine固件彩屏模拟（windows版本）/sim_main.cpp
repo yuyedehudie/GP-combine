@@ -16,6 +16,17 @@
 // 与 Linux 版的唯一差异是平台后端：X11 窗口/键盘 → Win32；zlib PNG → GDI+ 存图；
 // clock_gettime → QueryPerformanceCounter；业务帧协议、CLI 参数、巡演脚本格式完全不变。
 
+// 共享库模式（SIM_LIB）：给配置助手 ctypes 调用的 C API，符号需显式导出。
+#ifdef SIM_LIB
+#  ifdef _WIN32
+#    define SIM_EXPORT extern "C" __declspec(dllexport)
+#  else
+#    define SIM_EXPORT extern "C" __attribute__((visibility("default")))
+#  endif
+#else
+#  define SIM_EXPORT
+#endif
+
 // Win32/GDI+ 头必须在固件（Arduino.h 会定义 INPUT/OUTPUT 等宏）之前引入，
 // 否则 Arduino 宏会污染 winuser.h 里的 INPUT 结构体名。
 #ifdef _WIN32
@@ -110,7 +121,10 @@ File SimLittleFS::open(const char *path, const char *mode) {
         std::free(fd);
         return File();
     }
-    FILE *fp = std::fopen(full.c_str(), mode ? mode : "r");
+    // 二进制资源（.gfr / .nes）必须按 rb 打开：Windows 文本模式会把 0D0A 压成 0A，
+    // 读到的字节数与文件大小不符，GIF/ROM 加载校验会失败。写模式保留原 mode。
+    const char *fm = (mode && (std::strchr(mode, 'w') || std::strchr(mode, 'a'))) ? mode : "rb";
+    FILE *fp = std::fopen(full.c_str(), fm);
     return File(fp);
 #else
     struct stat st;
@@ -118,7 +132,8 @@ File SimLittleFS::open(const char *path, const char *mode) {
         DIR *d = ::opendir(full.c_str());
         return File(d, nullptr, full);
     }
-    FILE *fp = std::fopen(full.c_str(), mode ? mode : "r");
+    const char *fm = (mode && (std::strchr(mode, 'w') || std::strchr(mode, 'a'))) ? mode : "rb";
+    FILE *fp = std::fopen(full.c_str(), fm);
     return File(fp);
 #endif
 }
@@ -169,7 +184,7 @@ File File::openNextFile() {
             f.name_ = n;
             return f;
         }
-        FILE *fp = std::fopen(child.c_str(), "r");
+        FILE *fp = std::fopen(child.c_str(), "rb");
         if (!fp) return File();
         File f(fp);
         f.name_ = n;
@@ -263,7 +278,7 @@ File File::openNextFile() {
             f.name_ = n;
             return f;
         }
-        FILE *fp = std::fopen(child.c_str(), "r");
+        FILE *fp = std::fopen(child.c_str(), "rb");
         if (!fp) return File();
         File f(fp);
         f.name_ = n;
@@ -953,6 +968,7 @@ static LONG WINAPI simSeh(EXCEPTION_POINTERS *p) {
 }
 #endif
 
+#ifndef SIM_LIB
 int main(int argc, char **argv) {
 #ifdef _WIN32
     SetUnhandledExceptionFilter(simSeh);
@@ -1197,3 +1213,60 @@ int main(int argc, char **argv) {
     usage();
     return 1;
 }
+
+#else  // SIM_LIB —— 共享库模式：给配置助手用的 C API
+// ---------------------------------------------------------------------------
+// 帧缓冲直接就是固件的 lfb（RGB565），布局与 Qt 的 Format_RGB565 一致，
+// 助手侧零转换、零拷贝上屏。
+// ---------------------------------------------------------------------------
+static bool     g_libBooted = false;
+static uint16_t g_libButtons = 0;
+static uint8_t  g_libDpad = 0;
+
+SIM_EXPORT void sim_boot(const char *fs_root) {
+    if (g_libBooted) return;
+    if (fs_root && *fs_root) g_fsRoot = fs_root;
+    setup();
+    g_libBooted = true;
+}
+
+SIM_EXPORT int sim_width(void)  { return IMG_W; }
+SIM_EXPORT int sim_height(void) { return IMG_H; }
+
+// 推进 ms 毫秒假时钟并跑一次 loop()。助手用 60Hz 定时器调它。
+SIM_EXPORT void sim_tick(int ms) {
+    if (ms <= 0) ms = 1;
+    g_us += (uint64_t)ms * 1000ULL;
+    feedInput(g_libButtons, g_libDpad);   // 心跳补发由 feedInput 自己管
+    loop();
+}
+
+// 设置当前按键状态（按住持续生效，直到再次设置）
+SIM_EXPORT void sim_input(unsigned buttons, unsigned dpad) {
+    g_libButtons = (uint16_t)buttons;
+    g_libDpad = (uint8_t)dpad;
+}
+
+SIM_EXPORT const void *sim_frame(void) { return (const void *)lfb; }
+
+// 换了壁纸文件之后调用：重新读 /wp/1.gfr
+SIM_EXPORT int sim_reload_wallpaper(void) {
+    gifInit();
+    redrawNeeded = true;
+#if defined(WALLPAPER_ACTIVE)
+    return WALLPAPER_ACTIVE ? 1 : 0;
+#else
+    return wallpaperActive ? 1 : 0;
+#endif
+}
+
+// 固件当前是否启用了动态壁纸
+SIM_EXPORT int sim_wallpaper_active(void) {
+#if defined(WALLPAPER_ACTIVE)
+    return WALLPAPER_ACTIVE ? 1 : 0;
+#else
+    return wallpaperActive ? 1 : 0;
+#endif
+}
+
+#endif  // SIM_LIB

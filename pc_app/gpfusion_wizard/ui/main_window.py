@@ -243,6 +243,10 @@ class MainWindow(QWidget):
         idx = self._mode_offset() + row
         self._cur_row = row
         self.stack.setCurrentIndex(idx)
+        if self._mode == "full" and row == 2:
+            self.layout_page.reload_state()
+        if self._mode == "lite" and row == 2:
+            self.lite_layout_page.reload_state()
         if self._mode == "full" and row == 6:
             self.sim_page.on_shown()
         if self._mode == "full" and row == 7:

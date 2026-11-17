@@ -23,6 +23,10 @@ if not "%SKETCH%"=="" set "DEF_SKETCH=%SKETCH%"
 set "SKETCH=%DEF_SKETCH%"
 
 for %%F in ("%SKETCH%") do set "NAME=%%~nxF"
+REM 共享库/headless 短名：170/172 都是 320 宽但各编各的库，按工程名区分（与 Linux build.sh 一致）
+set "TAG=240"
+if /i "%NAME%"=="esp32_172x320" set "TAG=172"
+if /i "%NAME%"=="esp32_170x320" set "TAG=320"
 set "BUILD=%SIM%\build\%NAME%"
 set "GEN=%SIM%\build\gen"
 set "SRC=%BUILD%\sketch\%NAME%.ino.cpp"
@@ -79,15 +83,37 @@ set "LIB=%SDKROOT%\Lib\%SDKVER%\ucrt\x64;%SDKROOT%\Lib\%SDKVER%\um\x64;%LIB%"
 echo [build] %NAME%  (sketch %SKETCH%)
 if not exist "%BUILD%" mkdir "%BUILD%"
 
-cl /nologo /std:c++17 /O2 /w /EHsc /utf-8 ^
+REM 构建形态：SIM_SHARED=1 -> 共享库 libsim<TAG>.dll（配置助手内嵌预览）；默认 -> 独立 exe
+if /i "%SIM_SHARED%"=="1" (
+  set "OUT=%SIM%\build\libsim%TAG%.dll"
+  set "LIBFLAGS=/LD /DSIM_LIB"
+  echo [build] 共享库构建（配置助手内嵌预览）
+) else (
+  set "OUT=%SIM%\build\sim_%NAME%.exe"
+  set "LIBFLAGS="
+)
+
+cl /nologo /std:c++17 /O2 /w /EHsc /utf-8 !LIBFLAGS! ^
   /DSIM_IMG_W=%SIM_W% /DSIM_IMG_H=%SIM_H% ^
   /I "%SIM%\shim" /I "%SKETCH%" /I "%GEN%" ^
-  /Fo"%BUILD%\\" /Fe"%SIM%\build\sim_%NAME%.exe" ^
+  /Fo"%BUILD%\\" /Fe"!OUT!" ^
   "%SIM%\sim_main.cpp" %EXTRA% ^
   user32.lib gdi32.lib gdiplus.lib || (echo [build] cl failed & exit /b 1)
 
+if /i not "%SIM_SHARED%"=="1" goto :exe_done
+
+REM 共享库产物拷到配置助手 bin 目录
+if not exist "%REPO%\pc_app\gpfusion_wizard\bin" mkdir "%REPO%\pc_app\gpfusion_wizard\bin"
+copy /Y "!OUT!" "%REPO%\pc_app\gpfusion_wizard\bin\libsim%TAG%.dll" >nul
+if errorlevel 1 (echo [build] copy dll to wizard bin failed & exit /b 1)
+echo [build] OK -^> build\libsim%TAG%.dll  (copied to gpfusion_wizard\bin)
+goto :build_done
+
+:exe_done
 echo [build] OK -^> build\sim_%NAME%.exe
 echo [build] run: run.bat %ARG% --mode=keys --scale=3
+
+:build_done
 exit /b 0
 
 :usage
